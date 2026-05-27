@@ -87,11 +87,11 @@ CHROMA_COLLECTION_NAME = "rag_knowledge_base"
 KNOWLEDGE_BASE_FOLDER = os.path.join(BASE_DIR, "knowledge_base")
 
 # 数据库配置 (Database Config)
-DB_HOST = os.getenv("DB_HOST", "your_db_host") # 数据库地址
-DB_PORT = int(os.getenv("DB_PORT", 3306))      # 端口
-DB_USER = os.getenv("DB_USER", "your_db_user") # 用户名
-DB_PASS = os.getenv("DB_PASS", "your_db_pass") # 密码
-DB_NAME = os.getenv("DB_NAME", "your_db_name") # 数据库名
+DB_HOST = os.getenv("MYSQL_HOST", "localhost")   # 数据库地址，对应 .env 中的 MYSQL_HOST
+DB_PORT = int(os.getenv("MYSQL_PORT", 3306))    # 端口，默认 3306
+DB_USER = os.getenv("MYSQL_USER", "root")       # 用户名，对应 .env 中的 MYSQL_USER
+DB_PASS = os.getenv("MYSQL_PASSWORD", "")       # 密码，对应 .env 中的 MYSQL_PASSWORD
+DB_NAME = os.getenv("MYSQL_DATABASE", "")       # 数据库名，对应 .env 中的 MYSQL_DATABASE
 DB_TABLE = os.getenv("DB_TABLE", "company_files") # 存放文件的表名
 
 # 初始化 OpenAI 兼容的 API 客户端（连接到 SiliconFlow）
