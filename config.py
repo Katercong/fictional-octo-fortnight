@@ -94,6 +94,10 @@ DB_PASS = os.getenv("MYSQL_PASSWORD", "")       # 密码，对应 .env 中的 MY
 DB_NAME = os.getenv("MYSQL_DATABASE", "")       # 数据库名，对应 .env 中的 MYSQL_DATABASE
 DB_TABLE = os.getenv("DB_TABLE", "company_files") # 存放文件的表名
 
+# JWT 配置 (JWT Config)
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key")  # JWT 密钥
+TOKEN_EXPIRE_MINUTES = int(os.getenv("TOKEN_EXPIRE_MINUTES", 30))  # Token 过期时间（分钟）
+
 # 初始化 OpenAI 兼容的 API 客户端（连接到 SiliconFlow）
 client = OpenAI(
     # 从环境变量读取 API 密钥

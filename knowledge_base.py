@@ -10,9 +10,10 @@ from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from document_parser import extract_text_from_file
-from config import KNOWLEDGE_BASE_FOLDER, SYNC_INTERVAL_SECONDS, SEMANTIC_SEARCH_TOP_K
+from config import KNOWLEDGE_BASE_FOLDER, SYNC_INTERVAL_SECONDS, SEMANTIC_SEARCH_TOP_K, DB_TABLE
 from vector_store import add_chunks, clear_all, get_count
 from embedding import get_embedding, split_into_chunks
+from db import execute_query, DatabaseError
 
 # 知识库文档缓存（内存中）
 knowledge_base = {}
@@ -123,84 +124,124 @@ def _compute_chunk_embeddings():
 
     print(f"[ChromaDB 索引完成] 共 {total_chunks - failed_count} 个文本片段已存入向量数据库")
 
-def sync_knowledge_base():
+def _scan_folder(folder_path: str, folder_alias: str, current_files: set, supported_extensions: tuple):
+    """
+    扫描单个文件夹中的文档
+    """
+    global knowledge_base, file_md5_records
+    new_or_updated_count = 0
+    skipped_count = 0
+
+    if not os.path.isdir(folder_path):
+        print(f"[跳过] 文件夹不存在: {folder_path}")
+        return new_or_updated_count, skipped_count
+
+    print(f"\n[扫描文件夹] {folder_alias}: {folder_path}")
+
+    for root, _, files in os.walk(folder_path):
+        for filename in files:
+            if filename.lower().endswith(supported_extensions):
+                file_path = os.path.join(root, filename)
+                relative_path = f"{folder_alias}/{os.path.relpath(file_path, folder_path)}"
+                current_files.add(relative_path)
+
+                try:
+                    current_md5 = calculate_file_md5(file_path)
+                    if not current_md5:
+                        print(f"[跳过] 无法计算MD5: {relative_path}")
+                        skipped_count += 1
+                        continue
+
+                    if relative_path not in file_md5_records or file_md5_records[relative_path] != current_md5:
+                        content = extract_text_from_file(file_path)
+                        knowledge_base[relative_path] = {
+                            "content": content,
+                            "file_path": file_path,
+                            "md5": current_md5,
+                            "update_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        }
+                        file_md5_records[relative_path] = current_md5
+
+                        print(f"[文件更新] {relative_path} - 内容已更新")
+                        new_or_updated_count += 1
+                    else:
+                        print(f"[无变化] {relative_path} - 跳过")
+                        skipped_count += 1
+
+                except Exception as e:
+                    print(f"[错误] 处理文件失败: {relative_path}, 错误: {str(e)}")
+                    skipped_count += 1
+
+    return new_or_updated_count, skipped_count
+
+def sync_knowledge_base(user_role: str = ""):
     """
     同步知识库文件夹：
-    1. 扫描文件夹中的所有支持的文档
-    2. 通过 MD5 检测文件变化
-    3. 更新内存中的知识库
-    4. 如果有变化，触发向量重计算
+    1. 如果 user_role 不为空，从数据库获取该角色有权限的文件到 temp_cache
+    2. 扫描 knowledge_base 和 temp_cache 文件夹中的所有支持的文档
+    3. 通过 MD5 检测文件变化
+    4. 更新内存中的知识库
+    5. 如果有变化，触发向量重计算
+    
+    Args:
+        user_role: 用户角色，用于从数据库获取对应权限的文件。为空时跳过数据库拉取。
     """
     global knowledge_base, file_md5_records, knowledge_base_folder
 
-    # 检查文件夹是否有效
-    if not knowledge_base_folder or not os.path.isdir(knowledge_base_folder):
-        print("[知识库同步] 未设置知识库文件夹路径，跳过同步")
-        return
+    print(f"\n{'='*50}")
+    print(f"[知识库同步] 开始执行")
+
+    # Step 1: 如果 user_role 不为空，从数据库获取该角色有权限的文件
+    if user_role:
+        print(f"[数据库同步] 开始从数据库获取 {user_role} 角色有权限的文件...")
+        try:
+            fetch_files_from_db(user_role)
+        except Exception as e:
+            print(f"[数据库同步] 从数据库获取文件失败（可能数据库未配置）: {str(e)}")
     else:
-        supported_extensions = ('.txt', '.pdf', '.docx')
-        current_files = set()
-        new_or_updated_count = 0
-        skipped_count = 0
+        print("[数据库同步] user_role 为空，跳过数据库拉取")
 
-        print(f"\n{'='*50}")
-        print(f"[知识库同步] 开始扫描文件夹: {knowledge_base_folder}")
+    # Step 2: 定义要扫描的文件夹列表
+    supported_extensions = ('.txt', '.pdf', '.docx')
+    current_files = set()
+    total_new_or_updated = 0
+    total_skipped = 0
 
-        # 递归遍历文件夹
-        for root, _, files in os.walk(knowledge_base_folder):
-            for filename in files:
-                if filename.lower().endswith(supported_extensions):
-                    file_path = os.path.join(root, filename)
-                    relative_path = os.path.relpath(file_path, knowledge_base_folder)
-                    current_files.add(relative_path)
+    # 定义需要扫描的文件夹
+    scan_folders = [
+        (knowledge_base_folder, "knowledge_base")
+    ]
 
-                    try:
-                        # 计算当前文件的 MD5
-                        current_md5 = calculate_file_md5(file_path)
-                        if not current_md5:
-                            print(f"[跳过] 无法计算MD5: {relative_path}")
-                            skipped_count += 1
-                            continue
+    # 添加 temp_cache 文件夹（如果存在）
+    temp_cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_cache")
+    if os.path.isdir(temp_cache_dir):
+        scan_folders.append((temp_cache_dir, "temp_cache"))
 
-                        # 检查文件是新文件还是已更新
-                        if relative_path not in file_md5_records or file_md5_records[relative_path] != current_md5:
-                            # 提取文件内容
-                            content = extract_text_from_file(file_path)
-                            knowledge_base[relative_path] = {
-                                "content": content,
-                                "file_path": file_path,
-                                "md5": current_md5,
-                                "update_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            }
-                            file_md5_records[relative_path] = current_md5
+    # Step 3: 扫描所有文件夹
+    for folder_path, folder_alias in scan_folders:
+        if folder_path and os.path.isdir(folder_path):
+            new_count, skip_count = _scan_folder(folder_path, folder_alias, current_files, supported_extensions)
+            total_new_or_updated += new_count
+            total_skipped += skip_count
+        elif folder_path:
+            print(f"[跳过] 文件夹不存在: {folder_path}")
 
-                            print(f"[文件更新] {relative_path} - 内容已更新")
-                            new_or_updated_count += 1
-                        else:
-                            # 文件未变化，跳过
-                            print(f"[无变化] {relative_path} - 跳过")
-                            skipped_count += 1
+    # Step 4: 检测已删除的文件
+    deleted_files = set(file_md5_records.keys()) - current_files
+    if deleted_files:
+        print(f"\n[删除检测] 发现已删除的文件:")
+        for rel_path in deleted_files:
+            print(f"  - {rel_path}")
+            del knowledge_base[rel_path]
+            del file_md5_records[rel_path]
 
-                    except Exception as e:
-                        print(f"[错误] 处理文件失败: {relative_path}, 错误: {str(e)}")
-                        skipped_count += 1
+    print(f"\n[同步完成] 新增/更新: {total_new_or_updated}, 跳过: {total_skipped}, 已删除: {len(deleted_files)}")
+    print(f"[知识库状态] 当前文档数量: {len(knowledge_base)}")
+    print(f"{'='*50}\n")
 
-        # 检测已删除的文件
-        deleted_files = set(file_md5_records.keys()) - current_files
-        if deleted_files:
-            print(f"\n[删除检测] 发现已删除的文件:")
-            for rel_path in deleted_files:
-                print(f"  - {rel_path}")
-                del knowledge_base[rel_path]
-                del file_md5_records[rel_path]
-
-        print(f"\n[同步完成] 新增/更新: {new_or_updated_count}, 跳过: {skipped_count}, 已删除: {len(deleted_files)}")
-        print(f"[知识库状态] 当前文档数量: {len(knowledge_base)}")
-        print(f"{'='*50}\n")
-
-        # 如果有变化，触发向量重计算
-        if new_or_updated_count > 0 or deleted_files:
-            compute_chunk_embeddings()
+    # Step 5: 如果有变化，触发向量重计算
+    if total_new_or_updated > 0 or deleted_files:
+        compute_chunk_embeddings()
 
 def start_sync_scheduler():
     """
@@ -249,3 +290,60 @@ def get_knowledge_base_status():
         ],
         "vector_count": get_count()
     }
+
+def fetch_files_from_db(user_role: str) -> list:
+    """
+    从数据库获取指定角色有权限的文件，并保存到临时缓存目录
+    
+    Args:
+        user_role: 用户角色，用于权限过滤
+        
+    Returns:
+        成功保存的文件路径列表
+    """
+    temp_cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_cache")
+    
+    # 确保目录存在
+    os.makedirs(temp_cache_dir, exist_ok=True)
+    
+    # 清空目录下的所有旧文件
+    for filename in os.listdir(temp_cache_dir):
+        file_path = os.path.join(temp_cache_dir, filename)
+        try:
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+                print(f"[清理旧文件] 已删除: {filename}")
+        except Exception as e:
+            print(f"[清理旧文件失败] {filename}: {str(e)}")
+    
+    saved_files = []
+    
+    try:
+        query = f"""
+            SELECT file_name, file_content, permissions
+            FROM {DB_TABLE}
+            WHERE FIND_IN_SET(%s, permissions) > 0
+        """
+        
+        results = execute_query(query, (user_role,))
+        
+        for row in results:
+            file_name = row[0]
+            file_content = row[1]
+            
+            file_path = os.path.join(temp_cache_dir, file_name)
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(file_content)
+            
+            saved_files.append(file_path)
+            print(f"[DB文件缓存] 已保存: {file_name}")
+        
+        print(f"[DB文件缓存完成] 共保存 {len(saved_files)} 个文件到 {temp_cache_dir}")
+        
+    except DatabaseError as e:
+        print(f"[数据库查询错误] {str(e)}")
+    except Exception as e:
+        print(f"[文件保存错误] {str(e)}")
+    
+    return saved_files
