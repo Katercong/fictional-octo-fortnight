@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 问答测试</title>
+    <title>NebulaRAG - AI 问答助手</title>
     <style>
         * {
             margin: 0;
@@ -22,13 +22,93 @@
             border-radius: 10px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             overflow: hidden;
-            display: flex;
+            display: none;
             flex-direction: column;
             height: 600px;
         }
+        .login-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 400px;
+            margin: 50px auto;
+        }
+        .login-container h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #333;
+        }
+        .login-container input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 15px;
+            outline: none;
+        }
+        .login-container input:focus {
+            border-color: #007bff;
+        }
+        .login-container button {
+            width: 100%;
+            padding: 12px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .login-container button:hover {
+            background: #0056b3;
+        }
+        .login-container button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .login-error {
+            color: red;
+            text-align: center;
+            margin-top: 15px;
+            font-size: 14px;
+            display: none;
+        }
+        .user-info {
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+        }
+        .user-info .username {
+            font-weight: bold;
+            color: #333;
+        }
+        .user-info .role {
+            background: #e7f3ff;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #007bff;
+        }
+        .user-info button {
+            background: none;
+            border: none;
+            color: #dc3545;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .user-info button:hover {
+            text-decoration: underline;
+        }
         .header {
             padding: 20px;
-            background: #007bff;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             text-align: center;
         }
@@ -62,7 +142,7 @@
             white-space: pre-wrap;
         }
         .message.user .message-content {
-            background: #007bff;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border-bottom-right-radius: 4px;
         }
@@ -99,12 +179,12 @@
             background: #fafafa;
         }
         .file-upload:hover {
-            border-color: #007bff;
-            background: #f0f8ff;
+            border-color: #667eea;
+            background: #f0f4ff;
         }
         .file-upload.dragover {
-            border-color: #007bff;
-            background: #e6f2ff;
+            border-color: #667eea;
+            background: #e6f0ff;
             border-style: solid;
             transform: scale(1.02);
         }
@@ -137,26 +217,27 @@
             outline: none;
         }
         textarea:focus {
-            border-color: #007bff;
+            border-color: #667eea;
         }
         .send-btn {
             width: 100%;
             margin-top: 10px;
             padding: 12px;
-            background: #007bff;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
             border-radius: 25px;
             font-size: 16px;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: opacity 0.3s;
         }
         .send-btn:hover {
-            background: #0056b3;
+            opacity: 0.9;
         }
         .send-btn:disabled {
             background: #ccc;
             cursor: not-allowed;
+            opacity: 1;
         }
         .typing {
             display: flex;
@@ -181,12 +262,59 @@
             0%, 80%, 100% { opacity: 0.2; }
             40% { opacity: 1; }
         }
+        .demo-credentials {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #666;
+        }
+        .demo-credentials h4 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .demo-credentials table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .demo-credentials td {
+            padding: 5px;
+            border-bottom: 1px solid #ddd;
+        }
+        .demo-credentials tr:last-child td {
+            border-bottom: none;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="login-container" id="loginContainer">
+        <h1>🔐 登录</h1>
+        <input type="text" id="loginUsername" placeholder="用户名" autocomplete="username">
+        <input type="password" id="loginPassword" placeholder="密码" autocomplete="current-password">
+        <button id="loginBtn" onclick="login()">登录</button>
+        <div class="login-error" id="loginError"></div>
+        
+        <div class="demo-credentials">
+            <h4>演示账号：</h4>
+            <table>
+                <tr><td>admin</td><td>admin123</td><td>(管理员)</td></tr>
+                <tr><td>employee</td><td>emp123</td><td>(员工)</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <div class="container" id="chatContainer">
+        <div class="user-info" id="userInfo">
+            <div>
+                <span class="username" id="currentUsername"></span>
+                <span class="role" id="currentRole"></span>
+            </div>
+            <button onclick="logout()">退出登录</button>
+        </div>
+        
         <div class="header">
-            <h1>🤖 AI 问答助手</h1>
+            <h1>🤖 NebulaRAG 问答助手</h1>
         </div>
 
         <div class="chat-area" id="chatArea">
@@ -208,6 +336,85 @@
     <script>
         let chatHistory = [];
         let selectedFile = null;
+        let token = localStorage.getItem('access_token');
+        let currentUser = null;
+
+        function showLogin() {
+            document.getElementById('loginContainer').style.display = 'block';
+            document.getElementById('chatContainer').style.display = 'none';
+        }
+
+        function showChat() {
+            document.getElementById('loginContainer').style.display = 'none';
+            document.getElementById('chatContainer').style.display = 'flex';
+        }
+
+        async function login() {
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            const loginBtn = document.getElementById('loginBtn');
+            const errorElement = document.getElementById('loginError');
+
+            if (!username || !password) {
+                errorElement.textContent = '请输入用户名和密码';
+                errorElement.style.display = 'block';
+                return;
+            }
+
+            loginBtn.disabled = true;
+            loginBtn.textContent = '登录中...';
+            errorElement.style.display = 'none';
+
+            try {
+                const response = await fetch('http://127.0.0.1:8000/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.access_token) {
+                    token = data.access_token;
+                    localStorage.setItem('access_token', token);
+                    
+                    const userResponse = await fetch('http://127.0.0.1:8000/users/me', {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    
+                    if (userResponse.ok) {
+                        currentUser = await userResponse.json();
+                        document.getElementById('currentUsername').textContent = currentUser.username;
+                        document.getElementById('currentRole').textContent = currentUser.role;
+                    }
+                    
+                    showChat();
+                } else {
+                    errorElement.textContent = data.detail || '登录失败，请检查用户名和密码';
+                    errorElement.style.display = 'block';
+                }
+            } catch (error) {
+                errorElement.textContent = '登录失败: ' + error.message;
+                errorElement.style.display = 'block';
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = '登录';
+            }
+        }
+
+        function logout() {
+            token = null;
+            currentUser = null;
+            localStorage.removeItem('access_token');
+            chatHistory = [];
+            document.getElementById('chatArea').innerHTML = '<div class="message assistant"><div class="message-content">你好！我是 AI 助手。知识库中的文档会自动作为问答背景。请问有什么可以帮助您的？</div></div>';
+            showLogin();
+        }
 
         const fileUpload = document.getElementById('fileUpload');
         const fileInput = document.getElementById('fileInput');
@@ -299,6 +506,9 @@
 
                 const response = await fetch('http://127.0.0.1:8000/chat', {
                     method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
                     body: formData
                 });
 
@@ -313,7 +523,12 @@
 
                 if (!response.ok) {
                     const errorMsg = data.detail || data.error || '服务器错误';
-                    addMessage('assistant', '错误: ' + errorMsg);
+                    if (errorMsg.includes('Not authenticated') || errorMsg.includes('401')) {
+                        addMessage('assistant', '登录已过期，请重新登录');
+                        setTimeout(logout, 2000);
+                    } else {
+                        addMessage('assistant', '错误: ' + errorMsg);
+                    }
                     return;
                 }
 
@@ -373,6 +588,44 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        document.getElementById('loginUsername').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('loginPassword').focus();
+            }
+        });
+
+        document.getElementById('loginPassword').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                login();
+            }
+        });
+
+        if (token) {
+            fetch('http://127.0.0.1:8000/users/me', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            }).then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else {
+                    throw new Error('Token 无效');
+                }
+            }).then(user => {
+                currentUser = user;
+                document.getElementById('currentUsername').textContent = user.username;
+                document.getElementById('currentRole').textContent = user.role;
+                showChat();
+            }).catch(() => {
+                localStorage.removeItem('access_token');
+                token = null;
+                showLogin();
+            });
+        } else {
+            showLogin();
         }
     </script>
 </body>

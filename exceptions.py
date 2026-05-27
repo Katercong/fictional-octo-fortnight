@@ -1,6 +1,7 @@
 """
 异常处理器模块
 捕获数据库、JWT、HTTP、请求验证等异常，返回统一 JSON 格式
+定义自定义异常类供各模块使用
 """
 
 import traceback
@@ -10,6 +11,16 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
+
+
+class EmbeddingError(Exception):
+    """向量嵌入计算异常"""
+    pass
+
+
+class ChunkSplitError(Exception):
+    """文本分块异常"""
+    pass
 
 
 async def global_exception_handler(request: Request, exc: Exception):

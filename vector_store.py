@@ -1,10 +1,12 @@
 """
 向量存储模块
 封装 ChromaDB 操作，提供向量检索、添加、清空功能
+同时提供向量嵌入计算功能
 """
 
 import chromadb
-from config import CHROMA_DB_PATH, CHROMA_COLLECTION_NAME
+from config import CHROMA_DB_PATH, CHROMA_COLLECTION_NAME, client, EMBEDDING_MODEL
+from exceptions import EmbeddingError
 
 # 全局 ChromaDB 客户端和集合
 chroma_client = None
@@ -27,6 +29,30 @@ def init_chroma():
     )
     print(f"[ChromaDB] 向量数据库已连接，路径: {CHROMA_DB_PATH}")
     print(f"[ChromaDB] 集合 '{CHROMA_COLLECTION_NAME}' 就绪，当前记录数: {chroma_collection.count()}")
+
+
+def get_embedding(text: str) -> list:
+    """
+    调用 API 获取文本的向量嵌入
+
+    Args:
+        text: 输入文本
+
+    Returns:
+        向量列表
+
+    Raises:
+        EmbeddingError: 嵌入计算失败时抛出
+    """
+    try:
+        response = client.embeddings.create(
+            model=EMBEDDING_MODEL,
+            input=text
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        raise EmbeddingError(f"向量嵌入计算失败: {str(e)}")
+
 
 def search_relevant_chunks(query_embedding, top_k=3):
     """

@@ -5,8 +5,7 @@
 
 import json
 from config import client, SYSTEM_PROMPT, MAX_HISTORY_ROUNDS, SEMANTIC_SEARCH_TOP_K
-from vector_store import search_relevant_chunks, get_count
-from embedding import get_embedding
+from vector_store import search_relevant_chunks, get_count, get_embedding
 
 # 手动加载的文档缓存（临时存储，不持久化）
 loaded_documents = []
