@@ -66,15 +66,14 @@ NebulaRAG/
 ├── main.py                  # 应用入口：创建 app、绑定中间件、注册路由
 ├── config.py                 # 全局配置：环境变量读取
 ├── dependencies.py           # 依赖注入：JWT 认证
-├── exceptions.py             # 全局异常处理器
+├── exceptions.py             # 全局异常处理器 + 自定义异常类
 ├── schemas.py                # 请求/响应数据模型
 ├── startup.py                # 应用生命周期管理
 ├── auth.py                   # 用户认证：密码哈希、JWT、频率限制
 ├── db.py                     # 数据库访问层
 ├── chat_service.py           # 核心聊天服务：RAG Pipeline
-├── knowledge_base.py         # 知识库管理：同步、向量化、定时任务
-├── vector_store.py           # ChromaDB 向量数据库操作
-├── embedding.py              # 文本向量化
+├── knowledge_base.py         # 知识库管理：同步、向量化、文本分块、定时任务
+├── vector_store.py           # ChromaDB 向量数据库操作 + 向量嵌入计算
 ├── document_parser.py        # 文档解析（PDF/DOCX/TXT）
 ├── routers/                   # API 路由模块
 │   ├── __init__.py
@@ -95,15 +94,14 @@ NebulaRAG/
 | `main.py` | 应用组装层，仅绑定中间件和注册路由 |
 | `config.py` | 统一读取环境变量，提供配置项 |
 | `dependencies.py` | FastAPI 依赖注入：`get_current_user` |
-| `exceptions.py` | 全局异常处理：数据库、JWT、HTTP 异常 |
+| `exceptions.py` | 全局异常处理 + 自定义异常类（EmbeddingError、ChunkSplitError） |
 | `schemas.py` | Pydantic 模型：请求/响应数据结构 |
 | `startup.py` | 生命周期：`on_startup` / `on_shutdown` |
 | `auth.py` | 认证逻辑：密码哈希、JWT 生成、登录频率限制 |
 | `db.py` | 数据库访问：统一管理连接、查询、事务 |
 | `chat_service.py` | 核心业务：文档检索、上下文组装、AI 生成 |
-| `knowledge_base.py` | 知识库：文件夹扫描、文件监控、定时同步 |
-| `vector_store.py` | ChromaDB 操作：增删查、相似度匹配 |
-| `embedding.py` | 向量化：BAAI/bge-m3 模型调用 |
+| `knowledge_base.py` | 知识库：文件夹扫描、文本分块、文件监控、定时同步 |
+| `vector_store.py` | ChromaDB 操作 + 向量嵌入计算（get_embedding） |
 | `document_parser.py` | 文档解析：PDF/DOCX/TXT 文本提取 |
 | `routers/` | API 路由层，按业务域拆分 |
 
