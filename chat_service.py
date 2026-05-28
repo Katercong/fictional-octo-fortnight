@@ -15,7 +15,7 @@ loaded_folder_path = ""
 
 def get_combined_context(query: str = None, user_role: str = "") -> str:
     """
-    【隔离改造】获取组合上下文：语义检索角色专属 Collection + 角色专属知识库 + 手动加载文档
+    【合并检索】获取组合上下文：并行检索公共知识库 + 角色专属知识库，合并排序后作为上下文
 
     Args:
         query: 用户的问题（用于语义检索），如果为空则不做检索
@@ -24,17 +24,54 @@ def get_combined_context(query: str = None, user_role: str = "") -> str:
     Returns:
         组合后的上下文文本字符串
     """
-    collection_name = get_role_collection_name(user_role)
+    from config import CHROMA_COLLECTION_NAME
+    
     context_parts = []
 
-    # Step 1: 如果有查询且角色专属向量库中有数据，做语义检索
-    if query and get_count(collection_name) > 0:
+    # Step 1: 如果有查询，执行合并检索
+    if query:
         query_embedding = get_embedding(query)
         if query_embedding:
-            relevant_chunks = search_relevant_chunks(query_embedding, SEMANTIC_SEARCH_TOP_K, collection_name=collection_name)
-            if relevant_chunks:
+            all_chunks = []
+            
+            # 1.1 检索公共知识库（始终查询）
+            if get_count(CHROMA_COLLECTION_NAME) > 0:
+                try:
+                    public_chunks = search_relevant_chunks(query_embedding, SEMANTIC_SEARCH_TOP_K, collection_name=CHROMA_COLLECTION_NAME)
+                    if public_chunks:
+                        all_chunks.extend(public_chunks)
+                except Exception as e:
+                    print(f"[检索] 公共知识库查询失败: {str(e)}")
+            
+            # 1.2 检索角色专属知识库（仅当角色有效时查询）
+            role_collection_name = get_role_collection_name(user_role)
+            if role_collection_name and role_collection_name != CHROMA_COLLECTION_NAME:
+                if get_count(role_collection_name) > 0:
+                    try:
+                        role_chunks = search_relevant_chunks(query_embedding, SEMANTIC_SEARCH_TOP_K, collection_name=role_collection_name)
+                        if role_chunks:
+                            all_chunks.extend(role_chunks)
+                    except Exception as e:
+                        print(f"[检索] 角色专属知识库查询失败: {str(e)}")
+            
+            # 1.3 合并去重、按 score 降序排序、截取前 N 条
+            if all_chunks:
+                # 去重（基于 chunk_id）
+                seen_ids = set()
+                unique_chunks = []
+                for chunk in all_chunks:
+                    if chunk['chunk_id'] not in seen_ids:
+                        seen_ids.add(chunk['chunk_id'])
+                        unique_chunks.append(chunk)
+                
+                # 按 score 降序排序
+                unique_chunks.sort(key=lambda x: x['score'], reverse=True)
+                
+                # 截取前 N 条（使用 SEMANTIC_SEARCH_TOP_K 作为合并后的上限）
+                top_chunks = unique_chunks[:SEMANTIC_SEARCH_TOP_K]
+                
                 context_parts.append("【语义检索结果 - 最相关的文档片段】\n")
-                for i, chunk in enumerate(relevant_chunks, 1):
+                for i, chunk in enumerate(top_chunks, 1):
                     context_parts.append(f"--- 相关片段 {i} (来源: {chunk['source']}, 相似度: {chunk['score']}) ---")
                     context_parts.append(chunk['content'])
                     context_parts.append("")
