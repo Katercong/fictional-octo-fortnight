@@ -1318,9 +1318,12 @@
 
     function updateUserUI() {
       if (!state.user) return;
-      document.getElementById('userName').textContent = state.user.username;
-      document.getElementById('userAvatar').textContent = state.user.username[0].toUpperCase();
-      document.getElementById('roleName').textContent = `kb_${state.user.role}`;
+      const userNameEl = document.getElementById('userName');
+      const userAvatarEl = document.getElementById('userAvatar');
+      const roleNameEl = document.getElementById('roleName');
+      if (userNameEl) userNameEl.textContent = state.user.username;
+      if (userAvatarEl && state.user.username) userAvatarEl.textContent = state.user.username[0].toUpperCase();
+      if (roleNameEl) roleNameEl.textContent = `kb_${state.user.role}`;
     }
 
     async function handleLogin(e) {
@@ -1536,7 +1539,9 @@
     function appendMessageToDOM(msg) {
       const chatArea = document.getElementById('chatArea');
       const emptyState = document.getElementById('emptyState');
-      emptyState.style.display = 'none';
+      if (emptyState) {
+        emptyState.style.display = 'none';
+      }
       
       const wrapper = document.createElement('div');
       wrapper.className = `message-wrapper ${msg.role} fade-in-up`;
@@ -1568,6 +1573,8 @@
 
     function showTypingIndicator() {
       const chatArea = document.getElementById('chatArea');
+      if (!chatArea) return;
+      
       const indicator = document.createElement('div');
       indicator.className = 'message-wrapper assistant fade-in-up';
       indicator.id = 'typingIndicator';
@@ -1629,19 +1636,24 @@
 
         removeTypingIndicator();
 
-        const data = await response.json();
-
         if (!response.ok) {
-          const error = data.detail || '服务器错误';
-          if (error.includes('Not authenticated') || response.status === 401) {
+          if (response.status === 401) {
             showToast('登录已过期，请重新登录', 'error');
-            setTimeout(logout, 2000);
-          } else {
-            addMessage('assistant', `错误: ${error}`);
+            setTimeout(logout, 1500);
+            return;
           }
+          let errorMessage = '服务器错误';
+          try {
+            const data = await response.json();
+            errorMessage = data.detail || errorMessage;
+          } catch (e) {
+            // 忽略解析错误
+          }
+          addMessage('assistant', `错误: ${errorMessage}`);
           return;
         }
 
+        const data = await response.json();
         if (data.answer) {
           addMessage('assistant', data.answer);
         } else {
@@ -1751,18 +1763,17 @@
 
     function scrollToBottom() {
       const chatArea = document.getElementById('chatArea');
-      chatArea.scrollTop = chatArea.scrollHeight;
+      if (chatArea) {
+        chatArea.scrollTop = chatArea.scrollHeight;
+      }
     }
 
-    document.getElementById('chatArea').addEventListener('scroll', function() {
-      const scrollBtn = document.getElementById('scrollBtn');
-      const isNearBottom = this.scrollHeight - this.scrollTop - this.clientHeight < 100;
-      scrollBtn.classList.toggle('visible', !isNearBottom);
-    });
-
     function useQuickPrompt(prompt) {
-      document.getElementById('messageInput').value = prompt;
-      sendMessage();
+      const input = document.getElementById('messageInput');
+      if (input) {
+        input.value = prompt;
+        sendMessage();
+      }
     }
 
     function renderMarkdown(text) {
@@ -1817,6 +1828,8 @@
 
     function showToast(message, type = 'info') {
       const container = document.getElementById('toastContainer');
+      if (!container) return;
+      
       const toast = document.createElement('div');
       toast.className = `toast ${type} toast-enter`;
       
@@ -1838,7 +1851,11 @@
       setTimeout(() => {
         toast.classList.remove('toast-enter');
         toast.classList.add('toast-exit');
-        setTimeout(() => toast.remove(), 300);
+        setTimeout(() => {
+          if (toast.parentNode) {
+            toast.remove();
+          }
+        }, 300);
       }, 3000);
     }
 
@@ -1846,12 +1863,27 @@
       if (window.innerWidth > 768) {
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('sidebarOverlay');
-        sidebar.classList.remove('open');
-        overlay.classList.remove('open');
+        if (sidebar) sidebar.classList.remove('open');
+        if (overlay) overlay.classList.remove('open');
       }
     });
 
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', function() {
+      // 初始化聊天
+      init();
+      
+      // 绑定滚动事件
+      const chatArea = document.getElementById('chatArea');
+      if (chatArea) {
+        chatArea.addEventListener('scroll', function() {
+          const scrollBtn = document.getElementById('scrollBtn');
+          const isNearBottom = this.scrollHeight - this.scrollTop - this.clientHeight < 100;
+          if (scrollBtn) {
+            scrollBtn.classList.toggle('visible', !isNearBottom);
+          }
+        });
+      }
+    });
   </script>
 </body>
 </html>
