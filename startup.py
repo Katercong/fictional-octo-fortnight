@@ -9,15 +9,19 @@ from config import KNOWLEDGE_BASE_FOLDER
 from vector_store import init_chroma
 from knowledge_base import sync_knowledge_base, start_sync_scheduler, stop_scheduler
 from auth import create_users_table, add_test_user
+from db import create_company_files_table, add_test_files
 
 
 async def on_startup():
     """
-    应用启动时执行：创建数据库表、添加测试用户、初始化向量库、同步知识库
+    应用启动时执行：创建数据库表、添加测试用户、添加测试文件、初始化向量库、同步知识库
     """
     create_users_table()
     add_test_user("admin", "admin123", "admin")
     add_test_user("employee", "emp123", "employee")
+
+    create_company_files_table()
+    add_test_files()
 
     init_chroma()
 

@@ -6,31 +6,32 @@
 import json
 from config import client, SYSTEM_PROMPT, MAX_HISTORY_ROUNDS, SEMANTIC_SEARCH_TOP_K
 from vector_store import search_relevant_chunks, get_count, get_embedding
+from knowledge_base import get_combined_knowledge_base, get_role_collection_name
 
 # 手动加载的文档缓存（临时存储，不持久化）
 loaded_documents = []
 # 加载的文档文件夹路径
 loaded_folder_path = ""
 
-def get_combined_context(query: str = None) -> str:
+def get_combined_context(query: str = None, user_role: str = "") -> str:
     """
-    获取组合上下文：语义检索相关文档 + 知识库文档 + 手动加载文档
-    
+    【隔离改造】获取组合上下文：语义检索角色专属 Collection + 角色专属知识库 + 手动加载文档
+
     Args:
         query: 用户的问题（用于语义检索），如果为空则不做检索
-        
+        user_role: 用户角色名，用于路由到对应的 Collection 和知识库缓存
+
     Returns:
         组合后的上下文文本字符串
     """
-    from knowledge_base import knowledge_base
+    collection_name = get_role_collection_name(user_role)
     context_parts = []
 
-    # Step 1: 如果有查询且向量库中有数据，做语义检索
-    if query and get_count() > 0:
+    # Step 1: 如果有查询且角色专属向量库中有数据，做语义检索
+    if query and get_count(collection_name) > 0:
         query_embedding = get_embedding(query)
         if query_embedding:
-            # 检索最相关的 Top-K 个文档片段
-            relevant_chunks = search_relevant_chunks(query_embedding, SEMANTIC_SEARCH_TOP_K)
+            relevant_chunks = search_relevant_chunks(query_embedding, SEMANTIC_SEARCH_TOP_K, collection_name=collection_name)
             if relevant_chunks:
                 context_parts.append("【语义检索结果 - 最相关的文档片段】\n")
                 for i, chunk in enumerate(relevant_chunks, 1):
@@ -38,10 +39,11 @@ def get_combined_context(query: str = None) -> str:
                     context_parts.append(chunk['content'])
                     context_parts.append("")
 
-    # Step 2: 如果知识库有文档且没有查询，展示所有知识库文档
-    if knowledge_base and not query:
+    # Step 2: 如果知识库有文档且没有查询，展示角色合并后的知识库文档
+    combined_kb = get_combined_knowledge_base(user_role)
+    if combined_kb and not query:
         context_parts.append("【知识库文档】\n")
-        for i, (filename, doc) in enumerate(knowledge_base.items(), 1):
+        for i, (filename, doc) in enumerate(combined_kb.items(), 1):
             context_parts.append(f"--- 文档 {i}: {filename} ---")
             context_parts.append(doc['content'])
             context_parts.append("")
@@ -130,31 +132,26 @@ def get_documents_status():
         **kb_status
     }
 
-def process_chat(question: str, history: str, context_text: str = ""):
+def process_chat(question: str, history: str, context_text: str = "", user_role: str = ""):
     """
-    核心聊天处理函数：
-    1. 解析历史记录
-    2. 检索相关文档
-    3. 构建提示词
-    4. 调用 AI 生成回答
-    5. 更新历史记录
-    
+    【隔离改造】核心聊天处理函数，增加 user_role 参数实现权限隔离检索
+
     Args:
         question: 用户的问题
         history: 对话历史 JSON 字符串
         context_text: 额外的上下文文本（如上传的文件内容）
-        
+        user_role: 用户角色名，用于路由到角色专属 Collection 和知识库
+
     Returns:
         包含 answer 和 history 的字典
     """
-    # Step 1: 解析历史记录 JSON
     try:
         history_list = json.loads(history) if history else []
     except:
         history_list = []
 
-    # Step 2: 获取组合上下文（语义检索 + 知识库 + 手动加载）
-    loaded_context = get_combined_context(question)
+    # 【隔离改造】传递 user_role 到上下文检索
+    loaded_context = get_combined_context(question, user_role=user_role)
 
     # Step 3: 如果没有问题但有文档，默认让 AI 总结文档
     if not question:

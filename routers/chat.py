@@ -31,5 +31,5 @@ async def chat(
         context_text = extract_text_from_uploadfile(file)
         file.file.seek(0)
 
-    result = process_chat(question, history, context_text)
+    result = process_chat(question, history, context_text, user_role=current_user.role)
     return result
